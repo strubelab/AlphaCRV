@@ -5,17 +5,9 @@ AlphaCRV is a python package that helps identify correct interactors in a one-ag
 
 # Installation
 
-## Install with conda (not available yet)
+## Install in a conda environment
 
-AlphaCRV can be installed via conda:
-
-```bash
-conda install -c bioconda alphacrv
-```
-
-## Install from source
-
-The latest version of AlphaCRV can be installed from source using the following commands:
+The latest version of AlphaCRV can be installed in a linux system with the following commands (requires `conda`):
 
 ```bash
 ## Install the alphacrv library and dependencies in an virtual environment
@@ -124,10 +116,10 @@ This command should create the following files in the `--clusters_dir` / `merged
 
 # Example
 
-To see AlphaCRV in action, please refer to the Jupyter notebooks in the [example directory](example/).
+To see AlphaCRV in action, please refer to the Jupyter notebooks in the [examples directory](./examples/).
 
 # Citation
 
 If you use AlphaCRV in your research, please cite the following paper:
 
-{Submitted}
+*Submitted to Bioinformatics*
