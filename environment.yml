@@ -1,0 +1,25 @@
+name: null
+
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+  - schrodinger
+
+dependencies:
+  - biopython=1.81
+  - foldseek
+  - freemol
+  - ipython
+  - jupyterlab
+  - jupyterlab-git
+  - jupyterlab-lsp
+  - mmseqs2
+  - numpy=1.23
+  - pandas=2.1
+  - pip
+  - pymol-open-source
+  - python-language-server
+  - python=3.10
+  - seaborn
+  - scipy

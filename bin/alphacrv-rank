@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+
+import argparse
+from pathlib import Path
+import pandas as pd
+
+import logging
+logging.getLogger().setLevel(logging.INFO)
+
+from alphacrv.pymol_utils import make_pymol_sessions
+from alphacrv.clustering_utils import (copy_pdbs, get_top_clusters,
+                                           cluster_clusters)
+
+DESCRIPTION = ("This script performs the following actions, as a continuation to the clustering script:\n"
+                "1. Obtain the top clusters from the merged clusters, based on the user's filtering\n"
+                "   criteria\n"
+                "2. Copy the PDBs from each top cluster to a new directory\n"
+                "3. Make Pymol sessions for the clusters\n"
+                "4. Do structural clustering on the top clusters to find subclusters\n")
+
+def parsing(args: list=None) -> argparse.Namespace:
+    """
+    Creates the argument parser instance and applies it to the command line
+    input
+
+    Args:
+        args (list, optional): List of the arguments to be parsed (only to be
+            used for testing). If none is provided, it is taken from sys.argv.
+            Defaults to None.
+
+    Returns:
+        argparse.Namespace
+    """
+    
+    def validate_dir(d:str) -> Path:
+        """
+        Validate that the directory with the features exists
+        """
+        d = Path(d)
+        if not d.exists():
+            raise ValueError("The specified directory doesn't exist.")
+            
+        return d
+
+    parser = argparse.ArgumentParser(description=DESCRIPTION)
+    
+    parser.add_argument("--clusters_dir",
+        help=('Path to the directory with the merged clustering results.'),
+        required=True, type=validate_dir)
+    
+    parser.add_argument("--min_members",
+        help=("Minimum number of members for a cluster to be considered. "
+              "Default: 5"),
+        type=int, default=5)
+    
+    parser.add_argument("--min_tmscore",
+        help=("Minimum median TM-score for a cluster to be considered. "
+              "(Default: 0.2)"),
+        type=float, default=0.2)
+    
+    parser.add_argument("--min_fraction_binder",
+        help=("Minimum fraction of the binder for a cluster to be considered. "
+              "(Default: 0.2)"),
+        type=float, default=0.2)
+    
+    parser.add_argument("--max_rmsd",
+        help=("Maximum RMSD for a cluster to be considered. (Default: 15.0)"),
+        type=float, default=15.0)
+    
+    parser.add_argument("--cluster_clusters",
+        help=("Perform structural clustering on the top clusters to find "
+              "subclusters. (Default: False)"), action='store_true')
+    
+    return parser.parse_args(args)
+
+
+if __name__ == '__main__':
+
+    args = parsing()
+    
+    clusters_dir = args.clusters_dir / "merged_clusters"
+    
+    strclusters = pd.read_csv(clusters_dir / "merged_clusters.csv")
+    alignment_scores = pd.read_csv(clusters_dir / "alignment_scores.csv")
+    median_scores = pd.read_csv(clusters_dir / "median_scores.csv")
+    pdbs_dir = args.clusters_dir / "pdbs_trimmed"
+    out_merged = clusters_dir
+    
+    ####### 1. Obtain the top clusters from the merged clusters
+    
+    clusters, median_scores_filtered = get_top_clusters(median_scores, args.min_members,
+                                args.min_tmscore, args.min_fraction_binder,
+                                args.max_rmsd)
+    
+    logging.info(f"Identified {len(clusters)} top clusters.")
+    logging.info(f"Top clusters:")
+    print('')
+    select = median_scores_filtered.groupby('cluster').rmsd.idxmin()
+    columns = ['cluster', 'tmscore', 'rmsd', 'cluster_size', 'fraction_binder']
+    print(median_scores_filtered.loc[select, columns].sort_values(
+                     by='cluster_size', ascending=False).reset_index(drop=True))
+    print('')
+    # Ask the user for confirmation
+    input("Press Enter to continue, or Ctrl+C to exit and select different "
+          "filtering parameters: ")
+    
+    ####### 2. Copy the PDBs from each top cluster to a new directory
+    logging.info("Copying pdbs from the top clusters...")
+    copy_pdbs(strclusters, pdbs_dir, destination=out_merged, topclusters=clusters)
+    
+    ####### 3. Make Pymol sessions for the clusters
+    logging.info("Making Pymol sessions...")
+    make_pymol_sessions(strclusters, out_merged, clusters)
+    
+    ####### 4. Do structural clustering on the top clusters to find subclusters
+    if args.cluster_clusters:
+        logging.info("Clustering clusters...")
+        clustered_clusters = cluster_clusters(out_merged, clusters)
+        clustered_clusters.to_csv(out_merged / "clustered_clusters.csv", index=False)
+
+    logging.info("Done!!")

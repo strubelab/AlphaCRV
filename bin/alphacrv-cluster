@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+
+import argparse
+from pathlib import Path
+import re
+from Bio import SeqIO
+import pandas as pd
+
+import logging
+logging.getLogger().setLevel(logging.INFO)
+
+from alphacrv.clustering_utils import (get_scores, run_sequence_clustering,
+                                             run_structure_clustering,
+                                             get_iptm_threshold,
+                                             joint_clusters_df,
+                                             align_all,
+                                             medians_alignments,
+                                             add_binder_fraction)
+
+from alphacrv.trimming_utils import trim_models
+
+DESCRIPTION = ("This script performs the following actions to cluster structures:\n"
+               "1. Obtain quality scores for the models, and select the models with iptm >=\n"
+               "   iptm_threshold\n"
+               "2. Obtain the sequences to be clustered, and trim the PDB models and sequences\n"
+               "   based on the PAE threshold\n"
+               "3. Run mmseqs easy-cluster to cluster the binder sequences by sequence identity,\n"
+               "   and foldseek easy-cluster to cluster the binder structures by structure\n"
+               "4. Merge the sequence and structure clusters\n"
+               "5. Align all vs all members of each cluster, and calculate the median alignment\n"
+               "   scores of each cluster member (rmsd, tmscore) to identify the best\n"
+               "   representative for each cluster. These values can be used to rank the clusters.\n")
+
+def parsing(args: list=None) -> argparse.Namespace:
+    """
+    Creates the argument parser instance and applies it to the command line
+    input
+
+    Args:
+        args (list, optional): List of the arguments to be parsed (only to be
+            used for testing). If none is provided, it is taken from sys.argv.
+            Defaults to None.
+
+    Returns:
+        argparse.Namespace
+    """
+    
+    def validate_dir(d:str) -> Path:
+        """
+        Validate that the directory with the features exists
+        """
+        d = Path(d)
+        if not d.exists():
+            raise ValueError("The specified directory doesn't exist.")
+            
+        return d
+    
+    def validate_out(d:str) -> Path:
+        """
+        Create the directory if it doesn't exist.
+        """
+        d = Path(d)
+        if not d.exists():
+            d.mkdir()
+            
+        return d
+    
+    def validate_iptm(n:str) -> float:
+        """
+        Validate that the provided iptm number is between 0 and 1
+        """
+
+        n = float(n)
+        if n < 0 or n > 1:
+            raise ValueError("The iptm threshold must be between 0 and 1.")
+        return n
+    
+    def validate_bait(f:str) -> Path:
+        """
+        Validate that the bait file exists
+        """
+        f = Path(f)
+        if not f.exists():
+            raise ValueError("The specified bait file doesn't exist.")
+        
+        return f
+    
+    def validate_pae(n:str) -> float:
+        """
+        Validate that the provided pae number is between 0 and 30
+        """
+        n = float(n)
+        if n < 0 or n > 30:
+            raise ValueError("The PAE threshold must be between 0 and 30.")
+        return n
+
+    parser = argparse.ArgumentParser(description=DESCRIPTION)
+    
+    parser.add_argument("--bait",
+        help=("FASTA file with the sequence of the bait protein. This file must"
+              " contain only ONE sequence."),
+        type=validate_bait, required=True)
+
+    parser.add_argument("--binders", 
+        help=('FASTA file with the sequences of the binders that were modeled '
+              'with the bait.'), required=True,
+        type=Path)
+
+    parser.add_argument("--models_dir", 
+        help=('Path with the resulting AlphaFold models.'), required=True,
+        type=validate_dir)
+    
+    parser.add_argument("--destination",
+        help=("Path to save the results from clustering, as well as the "
+              "structures of the top clusters."), required=True,
+        type=validate_out)
+    
+    parser.add_argument("--iptm_threshold",
+        help=('Threshold for the iPTM score to select the best models '
+              '(between 0 and 1). The candidate sequences for the models with '
+              'a score above this number will be given in the outputs, along '
+              'with their random seeds. Default=0.75'),
+        type=validate_iptm, default=0.75)
+    
+    parser.add_argument("--pae_threshold",
+        help=('Threshold for the PAE score to select the region of the binder'
+              ' that will be used for clustering. Defaults to 10.'),
+        type=validate_pae, default=10.0)
+    
+    parser.add_argument("--min_seq_id",
+        help=('Minimum sequence identity for clustering. (Default=0.3)'), default=0.3, 
+        type=float)
+    
+    parser.add_argument("--coverage", 
+        help=('Minimum coverage. (Default=0.8)'), default=0.8, type=float)
+    
+    parser.add_argument("--cov_mode",
+        help=('Coverage mode. (Default=2)'), default=2, type=int)
+    
+    parser.add_argument("--sensitivity",
+        help=('Sensitivity. (Default=7)'), default=7, type=int)
+    
+    parser.add_argument("--evalue",
+        help=('E-value for structural clustering. (Default=0.01)'), default=0.01,
+        type=float)
+    
+    parser.add_argument("--cpus",
+        help=('Maximum number of CPUs to use. (Default=1)'), default=1, type=int)
+    
+    return parser.parse_args(args)
+
+
+    
+if __name__ == '__main__':
+
+    args = parsing()
+    
+    ####### 1. Get the quality scores for the models, and select the models with
+    #######    iptm >= iptm_threshold
+    
+    logging.info(f"Getting quality scores for models in {args.models_dir}...")
+    
+    scores = get_scores(args.models_dir)
+    
+    iptm_threshold = get_iptm_threshold(scores, args.iptm_threshold)
+    
+    scores = scores[scores.iptm >= iptm_threshold]
+    
+    ####### 2. Obtain the sequences to be clustered, and trim models and sequences
+    
+    model_names = list(scores.complex)
+    uids = [re.search(r'(-\d)?_(\w+)(-\d)?', m).group(2) for m in model_names]
+    scores['binder'] = uids
+    sequences = list(SeqIO.parse(args.binders, "fasta"))
+    sequences = [s for s in sequences if s.id in uids]
+
+    logging.info("Trimming binder molecules to keep only regions with an average "
+                 f"PAE against the bait of up to {args.pae_threshold}...")
+    
+    trimmed_binders, pdbs_dir = trim_models(args.bait, args.destination,
+                                    model_names, sequences, args.models_dir,
+                                    args.pae_threshold)
+
+    ####### 3. Cluster the trimmed sequences and the structures
+    
+    seqclusters = run_sequence_clustering(args.destination, trimmed_binders,
+                        results_prefix="clusterRes", temp_dir="tmp",
+                        min_seq_id=args.min_seq_id, coverage=args.coverage,
+                        cov_mode=args.cov_mode, sensitivity=args.sensitivity)
+    
+    strclusters, pdbs_dir = run_structure_clustering(args.destination,
+                        pdbs_dir, args.models_dir,
+                        results_prefix="clusterRes", temp_dir="tmp",
+                        coverage=args.coverage, cov_mode=args.cov_mode,
+                        evalue=args.evalue)
+    
+    # Get only the clusters for the structures of the binder (chain B)
+    strclusters = strclusters[strclusters.member.str.endswith('_B')]
+    # See if all the representatives also come from chain B
+    if not all(strclusters.rep.str.endswith('_B')):
+        logging.info("NOT ALL REPRESENTATIVES COME FROM CHAIN B")
+    # Remove the '.pdb_B' suffix from the members' names
+    strclusters['member'] = strclusters['member'].str.split('.pdb').str[0]
+    
+    # Add quality scores to clusters
+    strclusters = pd.merge(strclusters, scores, how='left', left_on='member',
+                            right_on='binder')
+    seqclusters = pd.merge(seqclusters, scores, how='left', left_on='member',
+                            right_on='binder')
+    
+    ####### 4. Merge the sequence and structure clusters
+    
+    out_merged = args.destination / "merged_clusters"
+    out_merged.mkdir(exist_ok=True)
+    
+    strclusters = joint_clusters_df(seqclusters, strclusters)
+    strclusters = strclusters.sort_values(by='iptm', ascending=False)
+    # Remove `binder` column and reorder columns
+    strclusters = strclusters[['str_rep','seq_rep','merged_rep',
+                               'member','iptm','iptm+ptm']]
+    strclusters.to_csv(out_merged / "merged_clusters.csv")
+    
+    ####### 5. Align all vs all members of each cluster, and calculate the
+    #######    median alignment scores to identify the best representatives
+    
+    logging.info("Aligning all vs all members of each cluster...")
+    alignment_scores = align_all(strclusters, pdbs_dir, cpus=args.cpus)
+    alignment_scores.to_csv(out_merged / "alignment_scores.csv", index=False)
+
+    logging.info("Calculating median alignment scores...")
+    median_scores = medians_alignments(alignment_scores, strclusters)
+    median_scores = add_binder_fraction(median_scores, pdbs_dir)
+    median_scores.to_csv(out_merged / "median_scores.csv", index=False)
+    
+    logging.info("Done!!")

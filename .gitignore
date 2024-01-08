@@ -1,0 +1,11 @@
+env
+__pycache__
+.vscode
+.ipynb_checkpoints
+AVRPia
+AVRPik
+runs
+*.egg-info
+scripts
+out_ibex
+SKP1
