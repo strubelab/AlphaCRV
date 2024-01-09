@@ -17,6 +17,8 @@ from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 import pandas as pd
 
+from alphacrv.clustering_utils import get_id
+
 logging.getLogger().setLevel(logging.INFO)
 
 
@@ -180,7 +182,7 @@ def trim_models(bait:Path, destination:Path, model_names: List[str],
     """
     
     bait_sequence = SeqIO.read(bait, 'fasta')
-    sequences = {s.id: s for s in sequences}
+    sequences = {get_id(s.id): s for s in sequences}
     
     pdbs_dir = destination / "pdbs_trimmed"
     if not pdbs_dir.exists():

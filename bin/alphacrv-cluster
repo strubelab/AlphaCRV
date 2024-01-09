@@ -15,7 +15,8 @@ from alphacrv.clustering_utils import (get_scores, run_sequence_clustering,
                                              joint_clusters_df,
                                              align_all,
                                              medians_alignments,
-                                             add_binder_fraction)
+                                             add_binder_fraction,
+                                             get_id)
 
 from alphacrv.trimming_utils import trim_models
 
@@ -172,7 +173,7 @@ if __name__ == '__main__':
     uids = [re.search(r'(-\d)?_(\w+)(-\d)?', m).group(2) for m in model_names]
     scores['binder'] = uids
     sequences = list(SeqIO.parse(args.binders, "fasta"))
-    sequences = [s for s in sequences if s.id in uids]
+    sequences = [s for s in sequences if get_id(s.id) in uids]
 
     logging.info("Trimming binder molecules to keep only regions with an average "
                  f"PAE against the bait of up to {args.pae_threshold}...")

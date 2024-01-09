@@ -25,6 +25,24 @@ logging.getLogger().setLevel(logging.INFO)
 from alphacrv.run_usalign import calculate_tmscore
 
 
+def get_id(seqid:str) -> str:
+    """
+    Process and return the id of the sequence
+
+    Args:
+        seqid (str): full id of the sequence
+
+    Returns:
+        str: processed id
+    """
+    names = seqid.split('|')
+    
+    if len(names) > 1:
+        return names[1]
+    else:
+        return names[0]
+
+
 def run_sequence_clustering(destination:Path, sequences:List[SeqRecord],
                         results_prefix:str="clusterRes", temp_dir:str="tmp",
                         min_seq_id:float=0.3, coverage:float=0.8, cov_mode:int=2,
