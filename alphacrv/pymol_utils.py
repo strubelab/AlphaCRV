@@ -25,7 +25,7 @@ def make_pymol_sessions(clusters:pd.DataFrame, destination:Path,
         cluster_dir = destination / f"cluster_{cluster}"
 
         # Load the cluster representative first
-        if re.search(r'.pdb_[AB]$', cluster):
+        if re.search(r'.pdb_[A-Z]$', cluster):
             chain = cluster[-1]
             cname = cluster.split('.pdb')[0]
             fname = cluster_dir / (cname + ".pdb")
