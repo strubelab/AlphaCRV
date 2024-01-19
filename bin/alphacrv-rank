@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 import pandas as pd
-
+from typing import List
 import logging
 logging.getLogger().setLevel(logging.INFO)
 
@@ -41,6 +41,17 @@ def parsing(args: list=None) -> argparse.Namespace:
             raise ValueError("The specified directory doesn't exist.")
             
         return d
+    
+    def validate_stoichiomemtry(s:str) -> List[int]:
+        """
+        Validate the stoichiometry provided
+        """
+        if ':' not in s:
+            raise ValueError('Stoichiometry must be provided as bait:candidate.')
+        
+        homomers = [int(n) for n in s.split(':')]
+        
+        return homomers
 
     parser = argparse.ArgumentParser(description=DESCRIPTION)
     
@@ -70,6 +81,11 @@ def parsing(args: list=None) -> argparse.Namespace:
     parser.add_argument("--cluster_clusters",
         help=("Perform structural clustering on the top clusters to find "
               "subclusters. (Default: False)"), action='store_true')
+    
+    parser.add_argument("--stoichiometry",
+        help=("Stoichiometry of the individual complexes provided as an integer"
+              " pair in the form of bait:candidate. Default=1:1"),
+        type=validate_stoichiomemtry, default=[1, 1])
     
     return parser.parse_args(args)
 
@@ -115,7 +131,8 @@ if __name__ == '__main__':
     ####### 4. Do structural clustering on the top clusters to find subclusters
     if args.cluster_clusters:
         logging.info("Clustering clusters...")
-        clustered_clusters = cluster_clusters(out_merged, clusters)
+        nbait = args.stoichiometry[0]   # Number of bait molecules
+        clustered_clusters = cluster_clusters(out_merged, clusters, nbait)
         clustered_clusters.to_csv(out_merged / "clustered_clusters.csv", index=False)
 
     logging.info("Done!!")

@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from Bio import SeqIO
 import pandas as pd
-
+from typing import List
 import logging
 logging.getLogger().setLevel(logging.INFO)
 
@@ -94,6 +94,17 @@ def parsing(args: list=None) -> argparse.Namespace:
         if n < 0 or n > 30:
             raise ValueError("The PAE threshold must be between 0 and 30.")
         return n
+    
+    def validate_stoichiomemtry(s:str) -> List[int]:
+        """
+        Validate the stoichiometry provided
+        """
+        if ':' not in s:
+            raise ValueError('Stoichiometry must be provided as bait:candidate.')
+        
+        homomers = [int(n) for n in s.split(':')]
+        
+        return homomers
 
     parser = argparse.ArgumentParser(description=DESCRIPTION)
     
@@ -148,6 +159,11 @@ def parsing(args: list=None) -> argparse.Namespace:
     parser.add_argument("--cpus",
         help=('Maximum number of CPUs to use. (Default=1)'), default=1, type=int)
     
+    parser.add_argument("--stoichiometry",
+        help=("Stoichiometry of the individual complexes provided as an integer"
+              " pair in the form of bait:candidate. Default=1:1"),
+        type=validate_stoichiomemtry, default=[1, 1])
+    
     return parser.parse_args(args)
 
 
@@ -174,13 +190,14 @@ if __name__ == '__main__':
     scores['binder'] = uids
     sequences = list(SeqIO.parse(args.binders, "fasta"))
     sequences = [s for s in sequences if get_id(s.id) in uids]
+    nbait = args.stoichiometry[0]   # Number of bait molecules
 
     logging.info("Trimming binder molecules to keep only regions with an average "
                  f"PAE against the bait of up to {args.pae_threshold}...")
     
     trimmed_binders, pdbs_dir = trim_models(args.bait, args.destination,
                                     model_names, sequences, args.models_dir,
-                                    args.pae_threshold)
+                                    args.pae_threshold, nbait)
 
     ####### 3. Cluster the trimmed sequences and the structures
     
@@ -195,12 +212,14 @@ if __name__ == '__main__':
                         coverage=args.coverage, cov_mode=args.cov_mode,
                         evalue=args.evalue)
     
-    # Get only the clusters for the structures of the binder (chain B)
-    strclusters = strclusters[strclusters.member.str.endswith('_B')]
-    # See if all the representatives also come from chain B
-    if not all(strclusters.rep.str.endswith('_B')):
-        logging.info("NOT ALL REPRESENTATIVES COME FROM CHAIN B")
-    # Remove the '.pdb_B' suffix from the members' names
+    # Get only the clusters for the structures of the binder (last chain ID)
+    chain_IDs ='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    binder_chainid = chain_IDs[nbait]
+    strclusters = strclusters[strclusters.member.str.endswith(f'_{binder_chainid}')]
+    # See if all the representatives also come from the binder chain
+    if not all(strclusters.rep.str.endswith(f'_{binder_chainid}')):
+        logging.info(f"NOT ALL REPRESENTATIVES COME FROM CHAIN {binder_chainid}")
+    # Remove the '.pdb_{chainid}' suffix from the members' names
     strclusters['member'] = strclusters['member'].str.split('.pdb').str[0]
     
     # Add quality scores to clusters

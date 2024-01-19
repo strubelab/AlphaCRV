@@ -67,8 +67,8 @@ def get_border_indices(mean_pae:np.ndarray, pthresh:float
     return btleft, btright
 
 
-def get_lowpae_indices(pae:np.ndarray, slength:int, pthresh:float
-                       ) -> Tuple[int, int, float]:
+def get_lowpae_indices(pae:np.ndarray, slength:int, pthresh:float,
+                       nbait:int=1) -> Tuple[int, int, float]:
     """
     Obtain the indices of the first and last appearances of a pae score below
     the threshold.
@@ -78,6 +78,7 @@ def get_lowpae_indices(pae:np.ndarray, slength:int, pthresh:float
                           the predicted aligned error
         slength (int): length of the bait sequence (chain A)
         pthresh (float): pae threshold
+        nbait (int, optional): Number of bait molecules in the complex. Defaults to 1.
 
     Returns:
         Tuple[int, int, float]: indices of the first and last appearances of a
@@ -88,18 +89,19 @@ def get_lowpae_indices(pae:np.ndarray, slength:int, pthresh:float
     # Extract the rows corresponding to the first sequence and the columns
     # corresponding to the second sequence.
     # Then calculate the mean of each column
-    mean_pae1 = np.mean(pae[:slength, slength:], axis=0)
+    mean_pae1 = np.mean(pae[:slength*nbait, slength*nbait:], axis=0)
     btleft1, btright1 = get_border_indices(mean_pae1, pthresh)
 
     # Extract the columns corresponding to the first sequence and the rows
     # corresponding to the second sequence.
     # Then calculate the mean of each row.
-    mean_pae2 = np.mean(pae[slength:, :slength], axis=1)
+    mean_pae2 = np.mean(pae[slength*nbait:, :slength*nbait], axis=1)
     btleft2, btright2 = get_border_indices(mean_pae2, pthresh)
 
     if all(np.isnan([btleft1, btright1, btleft2, btright2])):
         # keep increasing the threshold until we find a region with low PAE
-        minleft, maxright, pthresh = get_lowpae_indices(pae, slength, pthresh + 5)
+        minleft, maxright, pthresh = get_lowpae_indices(pae, slength, pthresh+5,
+                                                        nbait)
         return minleft, maxright, pthresh
     else:
         # Find the minimum of the left indices, where one could be nan
@@ -121,7 +123,8 @@ def get_lowpae_indices(pae:np.ndarray, slength:int, pthresh:float
     if maxright - minleft < 19:
         # keep increasing the threshold until we find a region of at least 20
         # residues with low PAE
-        minleft, maxright, pthresh = get_lowpae_indices(pae, slength, pthresh + 5)
+        minleft, maxright, pthresh = get_lowpae_indices(pae, slength, pthresh+5,
+                                                        nbait)
         return minleft, maxright, pthresh
 
     return int(minleft), int(maxright)+1, pthresh
@@ -142,10 +145,11 @@ def extract_pdb_region(pdb:Path, leftind:int, rightind:int, destination:Path,
     """
     
     m = b.PDBModel(os.fspath(pdb))
-    chainb = m.takeChains([1])
+    chain_indices = list(np.arange(m.lenChains()))
+    chainb = m.takeChains([chain_indices[-1]])
     chainb = chainb.takeResidues(list(np.arange(leftind, rightind)))
     
-    m2 = m.takeChains([0]).concat(chainb)
+    m2 = m.takeChains(chain_indices[:-1]).concat(chainb)
     
     # Get new name to write pdb
     # uid = re.search(r'-1_(\w+)-1', pdb.parent.name).group(1)
@@ -156,7 +160,8 @@ def extract_pdb_region(pdb:Path, leftind:int, rightind:int, destination:Path,
 
 def trim_models(bait:Path, destination:Path, model_names: List[str],
                 sequences:List[SeqRecord], models_dir:Path,
-                pae_threshold:float=15.0) -> Tuple[List[SeqRecord], Path]:
+                pae_threshold:float=15.0, nbait:int=1,
+                ) -> Tuple[List[SeqRecord], Path]:
     """
     Trim the models listed in model_names to the largest region with a PAE
     score below the threshold. Just take the first and last indices of the
@@ -175,6 +180,7 @@ def trim_models(bait:Path, destination:Path, model_names: List[str],
         models_dir (Path): Path to the directory with the models before trimming
         pae_threshold (float, optional): PAE threshold to trim models.
                                             Defaults to 15.0.
+        nbait (int, optional): Number of bait molecules in the complex. Defaults to 1.
 
     Returns:
         Tuple[List[SeqRecord], Path]: List of trimmed binders and path to the
@@ -204,7 +210,7 @@ def trim_models(bait:Path, destination:Path, model_names: List[str],
             # Get the indices of the region with low PAE
             leftind, rightind, pthresh = get_lowpae_indices(pae,
                                                         len(bait_sequence),
-                                                        pae_threshold)
+                                                        pae_threshold, nbait)
             
             # Save the sequence of the trimmed region
             id_binder = re.search(r'(-\d)?_(\w+)(-\d)?', m).group(2)

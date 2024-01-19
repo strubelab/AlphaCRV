@@ -579,7 +579,8 @@ def copy_pdbs(clusters:pd.DataFrame, pdbs_dir:Path, destination:Path,
             shutil.copy(pdb_name, new_name)
 
 
-def cluster_clusters(destination:Path, topclusters:list):
+def cluster_clusters(destination:Path, topclusters:list, nbait:int=1
+                     ) -> pd.DataFrame:
     """
     For each cluster:
     1. Do structural clustering to identify the "consensus" structure of the cluster
@@ -591,6 +592,7 @@ def cluster_clusters(destination:Path, topclusters:list):
             members
         destination (Path): Path to the directory with the pdbs for each cluster
         topclusters (list): List with the top clusters
+        nbait (int, optional): Number of bait molecules in the complex. Defaults to 1.
     """
     clustered_clusters = []
     for cluster in topclusters:
@@ -607,9 +609,11 @@ def cluster_clusters(destination:Path, topclusters:list):
                                     destination=cluster_clusters_dir,
                                     top_models_dir=cluster_dir)
         
-        # Get only the clusters for the structures of the binder
-        strclusters = strclusters[strclusters.member.str.endswith('_B')]
-        # Remove the '.pdb_B' suffix from the members' names
+        # Get only the clusters for the structures of the binder (last chain ID)
+        chain_IDs ='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        binder_chainid = chain_IDs[nbait]
+        strclusters = strclusters[strclusters.member.str.endswith(f'_{binder_chainid}')]
+        # Remove the '.pdb_{chainid}' suffix from the members' names
         strclusters['member'] = strclusters['member'].str.split('.pdb').str[0]
         strclusters['cluster'] = cluster
         
