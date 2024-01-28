@@ -60,23 +60,20 @@ def parsing(args: list=None) -> argparse.Namespace:
         required=True, type=validate_dir)
     
     parser.add_argument("--min_members",
-        help=("Minimum number of members for a cluster to be considered. "
-              "Default: 5"),
-        type=int, default=5)
+        help=("Minimum number of members for a cluster to be considered."),
+        type=int, default=1)
     
     parser.add_argument("--min_tmscore",
-        help=("Minimum median TM-score for a cluster to be considered. "
-              "(Default: 0.2)"),
-        type=float, default=0.2)
+        help=("Minimum median TM-score for a cluster to be considered."),
+        type=float, default=0.0)
     
     parser.add_argument("--min_fraction_binder",
-        help=("Minimum fraction of the binder for a cluster to be considered. "
-              "(Default: 0.2)"),
-        type=float, default=0.2)
+        help=("Minimum fraction of the binder for a cluster to be considered."),
+        type=float, default=-1.0)
     
     parser.add_argument("--max_rmsd",
-        help=("Maximum RMSD for a cluster to be considered. (Default: 15.0)"),
-        type=float, default=15.0)
+        help=("Maximum RMSD for a cluster to be considered."),
+        type=float, default=50.0)
     
     parser.add_argument("--cluster_clusters",
         help=("Perform structural clustering on the top clusters to find "
