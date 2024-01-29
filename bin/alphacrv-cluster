@@ -107,11 +107,6 @@ def parsing(args: list=None) -> argparse.Namespace:
         return homomers
 
     parser = argparse.ArgumentParser(description=DESCRIPTION)
-    
-    parser.add_argument("--bait",
-        help=("FASTA file with the sequence of the bait protein. This file must"
-              " contain only ONE sequence."),
-        type=validate_bait, required=True)
 
     parser.add_argument("--binders", 
         help=('FASTA file with the sequences of the binders that were modeled '
@@ -195,7 +190,7 @@ if __name__ == '__main__':
     logging.info("Trimming binder molecules to keep only regions with an average "
                  f"PAE against the bait of up to {args.pae_threshold}...")
     
-    trimmed_binders, pdbs_dir = trim_models(args.bait, args.destination,
+    trimmed_binders, pdbs_dir = trim_models(args.destination,
                                     model_names, sequences, args.models_dir,
                                     args.pae_threshold, nbait)
 

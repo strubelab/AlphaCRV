@@ -130,7 +130,7 @@ def get_lowpae_indices(pae:np.ndarray, slength:int, pthresh:float,
     return int(minleft), int(maxright)+1, pthresh
 
 
-def extract_pdb_region(pdb:Path, leftind:int, rightind:int, destination:Path,
+def extract_pdb_region(m:b.PDBModel, leftind:int, rightind:int, destination:Path,
                        id_binder:str) -> None:
     """
     Extract the region of the second chain of the pdb that is between the left
@@ -144,7 +144,6 @@ def extract_pdb_region(pdb:Path, leftind:int, rightind:int, destination:Path,
         id_binder (str): ID of the binder. Will be used to name the trimmed pdb
     """
     
-    m = b.PDBModel(os.fspath(pdb))
     chain_indices = list(np.arange(m.lenChains()))
     chainb = m.takeChains([chain_indices[-1]])
     chainb = chainb.takeResidues(list(np.arange(leftind, rightind)))
@@ -158,7 +157,7 @@ def extract_pdb_region(pdb:Path, leftind:int, rightind:int, destination:Path,
     m2.writePdb(os.fspath(new_name))
 
 
-def trim_models(bait:Path, destination:Path, model_names: List[str],
+def trim_models(destination:Path, model_names: List[str],
                 sequences:List[SeqRecord], models_dir:Path,
                 pae_threshold:float=15.0, nbait:int=1,
                 ) -> Tuple[List[SeqRecord], Path]:
@@ -187,7 +186,6 @@ def trim_models(bait:Path, destination:Path, model_names: List[str],
                                         directory with the trimmed PDBs
     """
     
-    bait_sequence = SeqIO.read(bait, 'fasta')
     sequences = {get_id(s.id): s for s in sequences}
     
     pdbs_dir = destination / "pdbs_trimmed"
@@ -205,11 +203,15 @@ def trim_models(bait:Path, destination:Path, model_names: List[str],
         if top_pdb.exists():
             count += 1
             
+            # Get the length of the bait directly from the first chain of the pdb
+            m = b.PDBModel(os.fspath(top_pdb))
+            len_bait = m.takeChains([0]).lenResidues()
+            
             pae = get_pae(d)
             
             # Get the indices of the region with low PAE
             leftind, rightind, pthresh = get_lowpae_indices(pae,
-                                                        len(bait_sequence),
+                                                        len_bait,
                                                         pae_threshold, nbait)
             
             # Save the sequence of the trimmed region
@@ -218,7 +220,7 @@ def trim_models(bait:Path, destination:Path, model_names: List[str],
             trimmed_binders.append(seq_trimmed)
             
             # Read pdb and extract the region
-            extract_pdb_region(top_pdb, leftind, rightind, pdbs_dir, id_binder)
+            extract_pdb_region(m, leftind, rightind, pdbs_dir, id_binder)
             
             # Save the region indices
             binders_regions.append((seq_trimmed.id, pthresh, leftind,
