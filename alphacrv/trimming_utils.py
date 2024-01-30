@@ -14,6 +14,7 @@ from typing import Tuple, List
 import biskit as b
 import numpy as np
 from Bio import SeqIO
+from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 import pandas as pd
 
@@ -147,6 +148,8 @@ def extract_pdb_region(m:b.PDBModel, leftind:int, rightind:int, destination:Path
     chain_indices = list(np.arange(m.lenChains()))
     chainb = m.takeChains([chain_indices[-1]])
     chainb = chainb.takeResidues(list(np.arange(leftind, rightind)))
+    chainb_sr = SeqRecord(Seq(chainb.sequence()), id=id_binder,
+                            description=id_binder, name=id_binder)
     
     m2 = m.takeChains(chain_indices[:-1]).concat(chainb)
     
@@ -155,11 +158,12 @@ def extract_pdb_region(m:b.PDBModel, leftind:int, rightind:int, destination:Path
     new_name = destination / (id_binder + ".pdb")
     
     m2.writePdb(os.fspath(new_name))
+    
+    return chainb_sr
 
 
-def trim_models(destination:Path, model_names: List[str],
-                sequences:List[SeqRecord], models_dir:Path,
-                pae_threshold:float=15.0, nbait:int=1,
+def trim_models(destination:Path, model_names: List[str], models_dir:Path,
+                pae_threshold:float=15.0, nbait:int=1, full_names:bool=False,
                 ) -> Tuple[List[SeqRecord], Path]:
     """
     Trim the models listed in model_names to the largest region with a PAE
@@ -180,13 +184,13 @@ def trim_models(destination:Path, model_names: List[str],
         pae_threshold (float, optional): PAE threshold to trim models.
                                             Defaults to 15.0.
         nbait (int, optional): Number of bait molecules in the complex. Defaults to 1.
+        full_names (bool, optional): If True, the full names of the bait+binders
+                                        will be used in the output files.
 
     Returns:
         Tuple[List[SeqRecord], Path]: List of trimmed binders and path to the
                                         directory with the trimmed PDBs
     """
-    
-    sequences = {get_id(s.id): s for s in sequences}
     
     pdbs_dir = destination / "pdbs_trimmed"
     if not pdbs_dir.exists():
@@ -197,15 +201,21 @@ def trim_models(destination:Path, model_names: List[str],
     
     count = 0
     
-    for m in model_names:
-        d = models_dir / m
+    for model_name in model_names:
+        d = models_dir / model_name
         top_pdb = d / "ranked_0.pdb"
         if top_pdb.exists():
             count += 1
             
+            # Get the id for the current binder
+            if full_names:
+                id_binder = model_name
+            else:
+                id_binder = re.search(r'(-\d)?_(\w+)(-\d)?', model_name).group(2)
+            
             # Get the length of the bait directly from the first chain of the pdb
-            m = b.PDBModel(os.fspath(top_pdb))
-            len_bait = m.takeChains([0]).lenResidues()
+            mpdb = b.PDBModel(os.fspath(top_pdb))
+            len_bait = mpdb.takeChains([0]).lenResidues()
             
             pae = get_pae(d)
             
@@ -214,19 +224,16 @@ def trim_models(destination:Path, model_names: List[str],
                                                         len_bait,
                                                         pae_threshold, nbait)
             
-            # Save the sequence of the trimmed region
-            id_binder = re.search(r'(-\d)?_(\w+)(-\d)?', m).group(2)
-            seq_trimmed = sequences[id_binder][leftind:rightind]
-            trimmed_binders.append(seq_trimmed)
-            
             # Read pdb and extract the region
-            extract_pdb_region(m, leftind, rightind, pdbs_dir, id_binder)
+            seq_trimmed = extract_pdb_region(mpdb, leftind, rightind, pdbs_dir,
+                                           id_binder)
+            trimmed_binders.append(seq_trimmed)
             
             # Save the region indices
             binders_regions.append((seq_trimmed.id, pthresh, leftind,
                                         rightind))
         else:
-            logging.warning(f"Could not find top ranked pdb for {m}")
+            logging.warning(f"Could not find top ranked pdb for {model_name}")
     
     logging.info(f"Processed {count} complexes.")
     
