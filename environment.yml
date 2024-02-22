@@ -1,4 +1,4 @@
-name: null
+name: alphacrv_env
 
 channels:
   - conda-forge
@@ -11,15 +11,15 @@ dependencies:
   - foldseek
   - freemol
   - ipython
-  - jupyterlab
-  - jupyterlab-git
-  - jupyterlab-lsp
+  # - jupyterlab
+  # - jupyterlab-git
+  # - jupyterlab-lsp
   - mmseqs2
   - numpy=1.23
   - pandas=2.1
   - pip
   - pymol-open-source
-  - python-language-server
+  # - python-language-server
   - python=3.10
   - seaborn
   - scipy
