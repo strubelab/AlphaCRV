@@ -1,0 +1,47 @@
+Bootstrap: docker
+From: gcc:9.5.0-bullseye
+Stage: build
+
+%post
+    cd /root
+    wget https://zhanggroup.org/US-align/bin/module/USalign.cpp
+    g++ -static -O3 -ffast-math -lm -o USalign USalign.cpp
+
+
+Bootstrap: docker
+From: continuumio/miniconda3:24.1.2-0
+Stage: final
+
+%files from build
+    /root/USalign /usalign/USalign
+
+%post
+    apt update && apt install -y wget ffmpeg libsm6 libxext6 unzip
+
+    wget https://github.com/strubelab/AlphaCRV/archive/2e52d506eb8d2014860b023d81b642fbd31e60de.zip
+    unzip 2e52d506eb8d2014860b023d81b642fbd31e60de.zip
+    mv AlphaCRV-2e52d506eb8d2014860b023d81b642fbd31e60de AlphaCRV
+
+    wget https://github.com/graik/biskit/archive/e15d6da94d8ca9d3842596994f3201a8108a9813.zip
+    unzip e15d6da94d8ca9d3842596994f3201a8108a9813.zip
+    mv biskit-e15d6da94d8ca9d3842596994f3201a8108a9813 biskit
+
+    conda update --name base --channel defaults conda
+    conda install --name base --channel conda-forge mamba
+    mamba env create --file ./AlphaCRV/environment.yml
+    conda clean --all --yes
+    PATH="/opt/conda/envs/alphacrv_env/bin:$PATH"
+    echo "export PATH=\"${PATH}\"" >> $SINGULARITY_ENVIRONMENT
+    /opt/conda/bin/conda run -n alphacrv_env /bin/bash -c 'pip install -e ./AlphaCRV'
+    /opt/conda/bin/conda run -n alphacrv_env /bin/bash -c 'pip install -e ./biskit'
+    
+    cd usalign
+    ln USalign /opt/conda/envs/alphacrv_env/bin/
+    cd ..
+
+%labels
+    Author Francisco Javier Guzmán-Vega
+    Version v1.0
+
+%help
+    This is a container for AlphaCRV
